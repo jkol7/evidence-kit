@@ -1,5 +1,6 @@
-import type { UnlockRule } from "@/lib/props/types";
+import type { ChallengeRule, UnlockRule } from "@/lib/props/types";
 import type { LockGraph } from "./graph";
+import { normalizeAnswer, normalizePasscode } from "./normalize";
 
 /**
  * A player's progress through one prop. Unlock status is never stored here:
@@ -85,4 +86,88 @@ export function isUnlocked(graph: LockGraph, state: PlayState, nodeId: string, n
 /** True when players can actually see the item: it and every container are open. */
 export function isAccessible(graph: LockGraph, state: PlayState, nodeId: string, now = new Date()): boolean {
   return accessible(nodeId, context(graph, state, now));
+}
+
+
+interface Located<R extends UnlockRule = UnlockRule> {
+  rule: R;
+  path: string;
+}
+
+/** Every passcode or keyword challenge inside a rule, with its position. */
+export function challengesIn(rule: UnlockRule, path = ""): Located<ChallengeRule>[] {
+  switch (rule.type) {
+    case "passcode":
+    case "keyword":
+      return [{ rule, path }];
+    case "all":
+    case "any":
+      return rule.rules.flatMap((r, i) => challengesIn(r, childPath(path, i)));
+    default:
+      return [];
+  }
+}
+
+function challengeMatches(rule: ChallengeRule, input: string): boolean {
+  if (rule.type === "passcode") return normalizePasscode(input) === rule.code;
+  const given = normalizeAnswer(input);
+  return given.length > 0 && rule.answers.some((a) => normalizeAnswer(a) === given);
+}
+
+export type AttemptOutcome =
+  | { result: "unlocked" }
+  /** A challenge was solved, but something else still blocks the item. */
+  | { result: "progress" }
+  | { result: "incorrect"; attempts: number }
+  | { result: "already-open" }
+  /** The item's container is still locked. */
+  | { result: "unavailable" }
+  | { result: "no-challenge" }
+  | { result: "unknown-node" };
+
+/** Applies a player's passcode or answer to an item. Returns a new state. */
+export function attempt(
+  graph: LockGraph,
+  state: PlayState,
+  nodeId: string,
+  input: string,
+  now = new Date(),
+): { state: PlayState; outcome: AttemptOutcome } {
+  const node = graph.get(nodeId);
+  if (!node) return { state, outcome: { result: "unknown-node" } };
+  if (node.parent && !isAccessible(graph, state, node.parent, now)) {
+    return { state, outcome: { result: "unavailable" } };
+  }
+  if (isUnlocked(graph, state, nodeId, now)) return { state, outcome: { result: "already-open" } };
+
+  const open = challengesIn(node.rule).filter((c) => !state.solved.includes(solvedKey(nodeId, c.path)));
+  if (open.length === 0) return { state, outcome: { result: "no-challenge" } };
+
+  const matched = open.filter((c) => challengeMatches(c.rule, input));
+  if (matched.length === 0) {
+    const attempts = (state.attempts[nodeId] ?? 0) + 1;
+    return {
+      state: { ...state, attempts: { ...state.attempts, [nodeId]: attempts } },
+      outcome: { result: "incorrect", attempts },
+    };
+  }
+
+  const next: PlayState = {
+    ...state,
+    solved: [...state.solved, ...matched.map((c) => solvedKey(nodeId, c.path))],
+  };
+  return {
+    state: next,
+    outcome: { result: isUnlocked(graph, next, nodeId, now) ? "unlocked" : "progress" },
+  };
+}
+
+/** GM action: reveal an item. Revealing twice changes nothing. */
+export function reveal(state: PlayState, nodeId: string): PlayState {
+  return state.revealed.includes(nodeId) ? state : { ...state, revealed: [...state.revealed, nodeId] };
+}
+
+/** GM action: undo a reveal. */
+export function conceal(state: PlayState, nodeId: string): PlayState {
+  return { ...state, revealed: state.revealed.filter((id) => id !== nodeId) };
 }

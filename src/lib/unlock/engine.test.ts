@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { PhoneProp, UnlockRule } from "@/lib/props/types";
-import { createPlayState, isAccessible, isUnlocked, type PlayState } from "./engine";
+import {
+  attempt,
+  conceal,
+  createPlayState,
+  isAccessible,
+  isUnlocked,
+  reveal,
+  type PlayState,
+} from "./engine";
 import { buildLockGraph } from "./graph";
 import { note, phoneWith } from "./test-utils";
 
@@ -69,5 +77,98 @@ describe("isUnlocked and isAccessible", () => {
     expect(isUnlocked(graph, state, "either", before)).toBe(true);
     expect(isUnlocked(graph, state, "both", before)).toBe(false);
     expect(isUnlocked(graph, state, "both", after)).toBe(true);
+  });
+});
+describe("attempt", () => {
+  const passcodePhone = () => graphOf(phoneWith([], { type: "passcode", code: "0614" }));
+  const diaryPhone = () =>
+    graphOf(phoneWith([note("diary", { type: "keyword", answers: ["Lighthouse"] })], { type: "passcode", code: "1234" }));
+
+  it("counts wrong attempts without unlocking", () => {
+    const graph = passcodePhone();
+    const { state, outcome } = attempt(graph, createPlayState(), "phone", "1234");
+    expect(outcome).toEqual({ result: "incorrect", attempts: 1 });
+    expect(isUnlocked(graph, state, "phone")).toBe(false);
+  });
+
+  it("unlocks with the right code, ignoring dashes and spaces", () => {
+    const graph = passcodePhone();
+    const { state, outcome } = attempt(graph, createPlayState(), "phone", "06-14 ");
+    expect(outcome.result).toBe("unlocked");
+    expect(isAccessible(graph, state, "phone")).toBe(true);
+  });
+
+  it("reports already-open on a second correct attempt", () => {
+    const graph = passcodePhone();
+    const first = attempt(graph, createPlayState(), "phone", "0614").state;
+    expect(attempt(graph, first, "phone", "0614").outcome.result).toBe("already-open");
+  });
+
+  it("never changes the state it was given", () => {
+    const before = createPlayState();
+    attempt(passcodePhone(), before, "phone", "0614");
+    expect(before).toEqual(createPlayState());
+  });
+
+  it("blocks attempts on items inside a locked container", () => {
+    const start = createPlayState();
+    const { state, outcome } = attempt(diaryPhone(), start, "diary", "lighthouse");
+    expect(outcome.result).toBe("unavailable");
+    expect(state).toBe(start);
+  });
+
+  it("accepts forgiving keyword answers once the container is open", () => {
+    const graph = diaryPhone();
+    const open = attempt(graph, createPlayState(), "phone", "1234").state;
+    const { state, outcome } = attempt(graph, open, "diary", "  LIGHTHOUSE! ");
+    expect(outcome.result).toBe("unlocked");
+    expect(isAccessible(graph, state, "diary")).toBe(true);
+  });
+
+  it("rejects answers that are empty after normalizing", () => {
+    const graph = diaryPhone();
+    const open = attempt(graph, createPlayState(), "phone", "1234").state;
+    expect(attempt(graph, open, "diary", "  !!! ").outcome.result).toBe("incorrect");
+  });
+
+  it("needs every challenge in an all rule, reporting progress in between", () => {
+    const graph = graphOf(
+      phoneWith([
+        note("vault", {
+          type: "all",
+          rules: [
+            { type: "passcode", code: "4321" },
+            { type: "keyword", answers: ["anchor"] },
+          ],
+        }),
+      ]),
+    );
+    const step1 = attempt(graph, createPlayState(), "vault", "4321");
+    expect(step1.outcome.result).toBe("progress");
+    const step2 = attempt(graph, step1.state, "vault", "anchor");
+    expect(step2.outcome.result).toBe("unlocked");
+  });
+
+  it("opens an any rule through either branch", () => {
+    const graph = graphOf(
+      phoneWith([note("door", { type: "any", rules: [{ type: "gm" }, { type: "keyword", answers: ["open sesame"] }] })]),
+    );
+    expect(isUnlocked(graph, reveal(createPlayState(), "door"), "door")).toBe(true);
+    expect(attempt(graph, createPlayState(), "door", "Open, sesame!").outcome.result).toBe("unlocked");
+  });
+
+  it("reports no-challenge for GM-only items and unknown-node for missing ids", () => {
+    const graph = graphOf(phoneWith([note("secret", { type: "gm" })]));
+    expect(attempt(graph, createPlayState(), "secret", "anything").outcome.result).toBe("no-challenge");
+    expect(attempt(graph, createPlayState(), "ghost", "anything").outcome.result).toBe("unknown-node");
+  });
+});
+
+describe("reveal and conceal", () => {
+  it("reveals once, ignores repeats and can be undone", () => {
+    const shown = reveal(createPlayState(), "secret");
+    expect(shown.revealed).toEqual(["secret"]);
+    expect(reveal(shown, "secret")).toBe(shown);
+    expect(conceal(shown, "secret").revealed).toEqual([]);
   });
 });
