@@ -171,3 +171,55 @@ export function reveal(state: PlayState, nodeId: string): PlayState {
 export function conceal(state: PlayState, nodeId: string): PlayState {
   return { ...state, revealed: state.revealed.filter((id) => id !== nodeId) };
 }
+
+const DEFAULT_HINT_AFTER = 3;
+
+export type LockStatus =
+  | { status: "open" }
+  | { status: "container-locked" }
+  | {
+      status: "needs-input";
+      input: "passcode" | "keyword";
+      prompt?: string;
+      /** Only included once the player has missed enough times. */
+      hint?: string;
+      codeLength?: number;
+    }
+  | { status: "waiting"; reason: "gm" | "time" | "after"; detail?: string };
+
+/** Everything the UI needs to draw a locked item. */
+export function describeLock(graph: LockGraph, state: PlayState, nodeId: string, now = new Date()): LockStatus {
+  const node = graph.get(nodeId);
+  if (!node) return { status: "waiting", reason: "gm" };
+  if (node.parent && !isAccessible(graph, state, node.parent, now)) return { status: "container-locked" };
+  if (isUnlocked(graph, state, nodeId, now)) return { status: "open" };
+
+  const pending = challengesIn(node.rule).find((c) => !state.solved.includes(solvedKey(nodeId, c.path)));
+  if (pending) {
+    const attempts = state.attempts[nodeId] ?? 0;
+    const hintAfter = pending.rule.hintAfterAttempts ?? DEFAULT_HINT_AFTER;
+    const hint = pending.rule.hint && attempts >= hintAfter ? pending.rule.hint : undefined;
+    return pending.rule.type === "passcode"
+      ? { status: "needs-input", input: "passcode", hint, codeLength: pending.rule.code.length }
+      : { status: "needs-input", input: "keyword", prompt: pending.rule.prompt, hint };
+  }
+  return { status: "waiting", ...waitingReason(node.rule) };
+}
+
+function waitingReason(rule: UnlockRule): { reason: "gm" | "time" | "after"; detail?: string } {
+  switch (rule.type) {
+    case "gm":
+      return { reason: "gm", detail: rule.label };
+    case "time":
+      return { reason: "time", detail: rule.at };
+    case "after":
+      return { reason: "after" };
+    case "all":
+    case "any": {
+      const inner = rule.rules.find((r) => r.type !== "none" && r.type !== "passcode" && r.type !== "keyword");
+      return inner ? waitingReason(inner) : { reason: "gm" };
+    }
+    default:
+      return { reason: "gm" };
+  }
+}

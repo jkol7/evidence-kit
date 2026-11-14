@@ -4,6 +4,7 @@ import {
   attempt,
   conceal,
   createPlayState,
+  describeLock,
   isAccessible,
   isUnlocked,
   reveal,
@@ -170,5 +171,67 @@ describe("reveal and conceal", () => {
     expect(shown.revealed).toEqual(["secret"]);
     expect(reveal(shown, "secret")).toBe(shown);
     expect(conceal(shown, "secret").revealed).toEqual([]);
+  });
+});
+
+describe("describeLock", () => {
+  it("asks for a passcode and shows the hint only after enough misses", () => {
+    const graph = graphOf(phoneWith([], { type: "passcode", code: "0614", hint: "birthday", hintAfterAttempts: 2 }));
+    let state = createPlayState();
+    expect(describeLock(graph, state, "phone")).toMatchObject({
+      status: "needs-input",
+      input: "passcode",
+      codeLength: 4,
+      hint: undefined,
+    });
+    state = attempt(graph, state, "phone", "1111").state;
+    state = attempt(graph, state, "phone", "2222").state;
+    expect(describeLock(graph, state, "phone")).toMatchObject({ status: "needs-input", hint: "birthday" });
+  });
+
+  it("reports container-locked for items inside a locked phone", () => {
+    const graph = graphOf(phoneWith([note("a")], { type: "passcode", code: "1234" }));
+    expect(describeLock(graph, createPlayState(), "a")).toEqual({ status: "container-locked" });
+  });
+
+  it("reports open once an item is unlocked", () => {
+    const graph = graphOf(phoneWith([note("secret", { type: "gm" })]));
+    expect(describeLock(graph, reveal(createPlayState(), "secret"), "secret")).toEqual({ status: "open" });
+  });
+
+  it("explains why an item is waiting", () => {
+    const graph = graphOf(
+      phoneWith([
+        note("tip", { type: "gm", label: "After the marina" }),
+        note("later", { type: "time", at: "2026-12-01T20:00:00Z" }),
+      ]),
+    );
+    const now = new Date("2026-11-01T00:00:00Z");
+    expect(describeLock(graph, createPlayState(), "tip", now)).toEqual({
+      status: "waiting",
+      reason: "gm",
+      detail: "After the marina",
+    });
+    expect(describeLock(graph, createPlayState(), "later", now)).toMatchObject({ status: "waiting", reason: "time" });
+  });
+
+  it("moves on to the next challenge in an all rule", () => {
+    const graph = graphOf(
+      phoneWith([
+        note("vault", {
+          type: "all",
+          rules: [
+            { type: "passcode", code: "4321" },
+            { type: "keyword", answers: ["anchor"], prompt: "Name the boat" },
+          ],
+        }),
+      ]),
+    );
+    const afterCode = attempt(graph, createPlayState(), "vault", "4321").state;
+    expect(describeLock(graph, afterCode, "vault")).toMatchObject({
+      status: "needs-input",
+      input: "keyword",
+      prompt: "Name the boat",
+    });
   });
 });
