@@ -1,36 +1,112 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Evidence Kit
 
-## Getting Started
+Interactive in-world props that players open on their own phones.
 
-First, run the development server:
+## Features
+
+- **Phone prop** with a passcode lock screen, wrong-code shake and timed hints
+- **Lock rules** that can be combined: passcodes, keywords, GM reveals, timed unlocks and "after X is open" chains
+- **Forgiving answers:** keyword matching ignores case, accents, punctuation and extra spaces
+- **Setup checking:** the engine catches broken props before game night, such as duplicate ids, missing references or two items that wait on each other forever
+- **Saved progress:** play state is stored in the browser and survives a refresh
+- **Sample case:** *The Harbor Light*, a missing bookkeeper's phone
+
+## Tech stack
+
+| Layer | Tool |
+| --- | --- |
+| Framework | Next.js 16 (App Router) |
+| UI | React 19 |
+| Language | TypeScript (strict) |
+| Styling | Tailwind CSS v4 |
+| Validation | zod |
+| Tests | Vitest |
+| Linting | ESLint (`eslint-config-next`) |
+| CI | GitHub Actions (lint, typecheck, test, build) |
+| Hosting | Vercel |
+
+## Getting started
+
+Requires Node 22 (pinned in `.nvmrc`).
 
 ```bash
+git clone https://github.com/YOUR-USERNAME/evidence-kit.git
+cd evidence-kit
+nvm use          # optional, picks up Node 22 from .nvmrc
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) and choose **Dana Whitlock's phone**.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+To test on a phone on the same Wi-Fi, open the Network URL that `npm run dev` prints. Its IP must be listed in `allowedDevOrigins` in `next.config.ts`, or Next.js will block dev resources and the page will stay blank.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Scripts
 
-## Learn More
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Start the dev server |
+| `npm run build` | Production build |
+| `npm start` | Serve the production build |
+| `npm test` | Run the Vitest suite |
+| `npm run typecheck` | Check types with `tsc --noEmit` |
+| `npm run lint` | Run ESLint |
 
-To learn more about Next.js, take a look at the following resources:
+CI runs lint, typecheck, test and build on every push and pull request.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## How it works
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Data flows one way through five layers:
 
-## Deploy on Vercel
+```
+Data model  →  Unlock engine  →  State hook  →  UI components  →  Routes
+(types +       (pure TS,         (React +       (phone screens)    (/p/[propId])
+ zod schema)    no React)         localStorage)
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+### Project structure
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+src/
+├── app/                    Routes: / lists samples, /p/[propId] renders a prop
+├── components/phone/       Phone frame, loader, lock screen, home screen
+├── data/samples/           Sample props (harbor-light.ts)
+├── hooks/usePlayState.ts   Connects the engine to React and saves progress
+└── lib/
+    ├── props/              types.ts (prop shapes) and schema.ts (zod + parseProp)
+    ├── unlock/             graph.ts, engine.ts, normalize.ts
+    └── play/storage.ts     Validated save and load for play state
+```
+
+### Lock rules
+
+| Rule | Opens when |
+| --- | --- |
+| `passcode` | The exact code is entered on the keypad |
+| `keyword` | A matching answer is typed (forgiving match) |
+| `gm` | The GM reveals it |
+| `time` | A set moment passes |
+| `after` | Other named items are open |
+| `all` / `any` | Every / at least one nested rule passes |
+
+Any rule can show a hint after a set number of wrong attempts.
+
+### Design decisions
+
+- **The engine knows nothing about phones.** It only sees ids and rules, so future prop types (websites, inboxes, locked documents) can reuse it unchanged.
+- **Unlock status is derived, never stored.** Player state only records solved challenges, GM reveals and attempt counts. Whether something is open is always worked out from the rules, so saved state can't drift out of sync with the prop.
+- **Parents gate children.** A note can't open while its phone is still locked.
+- **Props are plain data,** validated with zod, so they're easy to store, edit and export later.
+- **The phone renders in the browser only.** Saved progress lives in `localStorage`, so the phone skips server rendering and shows "Loading…" until it's ready. This avoids a mismatch between server and browser output.
+
+### Testing
+
+The engine, schema and storage are pure functions, so they're covered by fast unit tests. An integration test plays the whole *Harbor Light* case through the real schema, graph and engine to check that every clue leads to the next.
+
+The `usePlayState` hook has no dedicated test yet. It's mostly wiring, and the logic it calls is already tested. Browser tests (jsdom + React Testing Library) will be added if it grows.
+
+## Known limitations
+
+- **Answers ship to the browser,** so a player could find them in dev tools. Answer checking will move server-side before any public launch.
+- **Progress is per browser.** There's no shared session or live GM control across devices yet.
+- **No editor.** Props are written as TypeScript data files for now.
