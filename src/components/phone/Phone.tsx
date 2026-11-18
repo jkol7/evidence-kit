@@ -9,6 +9,8 @@ import { LockScreen } from "./LockScreen";
 import { NotesApp } from "./apps/NotesApp";
 import type { AppProps } from "./apps/types";
 import { VoicemailApp } from "./apps/VoicemailApp";
+import { MessagesApp } from "./apps/MessagesApp";
+import { PhotosApp } from "./apps/PhotosApp";
 
 export function Phone({ prop }: { prop: PhoneProp }) {
   const session = usePlayState(prop);
@@ -66,6 +68,10 @@ export function Phone({ prop }: { prop: PhoneProp }) {
 
 function renderApp(app: AppId, props: AppProps): ReactNode {
   switch (app) {
+        case "messages":
+      return <MessagesApp {...props} />;
+    case "photos":
+      return <PhotosApp {...props} />;
     case "notes":
       return <NotesApp {...props} />;
     case "voicemail":
