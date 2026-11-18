@@ -6,6 +6,9 @@ import type { PhoneProp } from "@/lib/props/types";
 import { AppHeader } from "./AppHeader";
 import { APPS, HomeScreen, type AppId } from "./HomeScreen";
 import { LockScreen } from "./LockScreen";
+import { NotesApp } from "./apps/NotesApp";
+import type { AppProps } from "./apps/types";
+import { VoicemailApp } from "./apps/VoicemailApp";
 
 export function Phone({ prop }: { prop: PhoneProp }) {
   const session = usePlayState(prop);
@@ -27,13 +30,7 @@ export function Phone({ prop }: { prop: PhoneProp }) {
   } else if (root.status !== "open") {
     screen = <p className="grid flex-1 place-items-center text-white/60">This phone is switched off.</p>;
   } else if (app) {
-    const label = APPS.find((a) => a.id === app)?.label ?? "App";
-    screen = (
-      <div className="flex flex-1 flex-col bg-page text-ink">
-        <AppHeader title={label} onBack={() => setApp(null)} />
-        <p className="grid flex-1 place-items-center text-muted">Coming in Step 8.</p>
-      </div>
-    );
+    screen = renderApp(app, { content, session, onHome: () => setApp(null) });
   } else {
     screen = <HomeScreen clock={content.clock} onOpen={setApp} />;
   }
@@ -65,4 +62,22 @@ export function Phone({ prop }: { prop: PhoneProp }) {
       </div>
     </div>
   );
+}
+
+function renderApp(app: AppId, props: AppProps): ReactNode {
+  switch (app) {
+    case "notes":
+      return <NotesApp {...props} />;
+    case "voicemail":
+      return <VoicemailApp {...props} />;
+    default: {
+      const label = APPS.find((a) => a.id === app)?.label ?? "App";
+      return (
+        <div className="flex flex-1 flex-col bg-page text-ink">
+          <AppHeader title={label} onBack={props.onHome} />
+          <p className="grid flex-1 place-items-center text-muted">Coming soon.</p>
+        </div>
+      );
+    }
+  }
 }
