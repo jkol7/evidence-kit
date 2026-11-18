@@ -13,8 +13,8 @@ interface Props<T extends Lockable> {
   items: T[];
   session: PlaySession;
   onHome: () => void;
-  /** Name for one item, used in its header and password gate. */
-  itemTitle: (item: T) => string;
+  /** Name for one item, used in its header and password gate. `open` is false while it's locked. */
+  itemTitle: (item: T, open: boolean) => string;
   /** How one item looks in the list. `open` is false while it's locked. */
   renderItem: (item: T, open: boolean) => ReactNode;
   /** The item's content once it's open. */
@@ -45,16 +45,17 @@ export function LockableCollection<T extends Lockable>({
 
   if (selected) {
     const status = session.status(selected.id);
+    const name = itemTitle(selected, status.status === "open");
     return (
       <section className="flex min-h-0 flex-1 flex-col bg-page text-ink">
-        <AppHeader title={itemTitle(selected)} onBack={() => setSelectedId(null)} />
+        <AppHeader title={name} onBack={() => setSelectedId(null)} />
         <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pb-6">
           {status.status === "open"
             ? renderDetail(selected)
             : status.status === "needs-input" && (
                 <KeywordGate
                   key={selected.id}
-                  title={itemTitle(selected)}
+                  title={name}
                   prompt={status.prompt}
                   hint={status.hint}
                   onSubmit={(answer) => session.tryUnlock(selected.id, answer)}
