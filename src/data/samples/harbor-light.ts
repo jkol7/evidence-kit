@@ -92,9 +92,9 @@ export const harborLight: PhoneProp = {
       },
     ],
     calls: [
-      { contact: "Marcus Pell", direction: "incoming", at: "Tue 9:20 PM", durationSec: 64 },
-      { contact: "(555) 014-2290", direction: "missed", at: "Tue 10:51 PM" },
       { contact: "Rae", direction: "outgoing", at: "Tue 10:58 PM", durationSec: 12 },
+      { contact: "(555) 014-2290", direction: "missed", at: "Tue 10:51 PM" },
+      { contact: "Marcus Pell", direction: "incoming", at: "Tue 9:20 PM", durationSec: 64 },
       { contact: "Lily", direction: "incoming", at: "Tue 2:44 PM", durationSec: 31 },
     ],
     voicemails: [

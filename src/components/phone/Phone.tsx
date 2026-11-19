@@ -3,14 +3,16 @@
 import { useState, type ReactNode } from "react";
 import { usePlayState } from "@/hooks/usePlayState";
 import type { PhoneProp } from "@/lib/props/types";
-import { AppHeader } from "./AppHeader";
-import { APPS, HomeScreen, type AppId } from "./HomeScreen";
+import {  HomeScreen, type AppId } from "./HomeScreen";
 import { LockScreen } from "./LockScreen";
 import { NotesApp } from "./apps/NotesApp";
 import type { AppProps } from "./apps/types";
 import { VoicemailApp } from "./apps/VoicemailApp";
 import { MessagesApp } from "./apps/MessagesApp";
 import { PhotosApp } from "./apps/PhotosApp";
+import { CallsApp } from "./apps/CallsApp";
+import { isListed } from "@/lib/unlock";
+
 
 export function Phone({ prop }: { prop: PhoneProp }) {
   const session = usePlayState(prop);
@@ -34,7 +36,14 @@ export function Phone({ prop }: { prop: PhoneProp }) {
   } else if (app) {
     screen = renderApp(app, { content, session, onHome: () => setApp(null) });
   } else {
-    screen = <HomeScreen clock={content.clock} onOpen={setApp} />;
+    const visible = (items: { id: string }[]) =>
+      items.filter((item) => isListed(session.status(item.id))).length;
+    const badges = {
+      messages: visible(content.threads),
+      voicemail: visible(content.voicemails),
+      calls: content.calls.filter((call) => call.direction === "missed").length,
+    };
+    screen = <HomeScreen clock={content.clock} onOpen={setApp} badges={badges} />;
   }
 
   return (
@@ -68,22 +77,20 @@ export function Phone({ prop }: { prop: PhoneProp }) {
 
 function renderApp(app: AppId, props: AppProps): ReactNode {
   switch (app) {
-        case "messages":
+    case "messages":
       return <MessagesApp {...props} />;
     case "photos":
       return <PhotosApp {...props} />;
     case "notes":
       return <NotesApp {...props} />;
+    case "calls":
+      return <CallsApp {...props} />;
     case "voicemail":
       return <VoicemailApp {...props} />;
     default: {
-      const label = APPS.find((a) => a.id === app)?.label ?? "App";
-      return (
-        <div className="flex flex-1 flex-col bg-page text-ink">
-          <AppHeader title={label} onBack={props.onHome} />
-          <p className="grid flex-1 place-items-center text-muted">Coming soon.</p>
-        </div>
-      );
+      // If a new AppId is added without a case above, this line fails typecheck.
+      const unhandled: never = app;
+      return unhandled;
     }
   }
 }
